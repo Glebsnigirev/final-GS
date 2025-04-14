@@ -1,5 +1,4 @@
-module github.com/glebsnigirev/go_final_project_GS
-
+module  github.com/glebsnigirev/final-GS
 go 1.24.2
 
 require (

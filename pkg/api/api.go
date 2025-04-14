@@ -9,6 +9,8 @@ import (
 // Init регистрирует маршруты для API
 func Init() {
 	http.HandleFunc("/api/nextdate", nextDayHandler)
+	http.HandleFunc("/api/task", taskHandler)
+	http.HandleFunc("/api/task/add", addTaskHandler) // Добавляем обработчик для добавления задачи
 }
 
 // nextDayHandler обрабатывает запросы к маршруту /api/nextdate
@@ -24,7 +26,7 @@ func nextDayHandler(w http.ResponseWriter, r *http.Request) {
 		now = time.Now()
 	} else {
 		var err error
-		now, err = time.Parse(layout, nowParam)
+		now, err = time.Parse("20060102", nowParam) // Здесь уточнил формат
 		if err != nil {
 			http.Error(w, "Invalid 'now' parameter", http.StatusBadRequest)
 			return
@@ -32,7 +34,7 @@ func nextDayHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Парсим дату
-	_, err := time.Parse(layout, dateParam)
+	_, err := time.Parse("20060102", dateParam) // Уточнил формат
 	if err != nil {
 		http.Error(w, "Invalid 'date' parameter", http.StatusBadRequest)
 		return

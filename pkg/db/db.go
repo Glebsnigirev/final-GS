@@ -20,6 +20,10 @@ CREATE INDEX idx_date ON scheduler(date);
 
 var db *sql.DB
 
+func GetDB() *sql.DB {
+	return db
+}
+
 func Init(dbFile string) error {
 	_, err := os.Stat(dbFile)
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/glebsnigirev/go_final_project_GS/pkg/db"
-	"github.com/glebsnigirev/go_final_project_GS/pkg/server"
+	"github.com/glebsnigirev/final-GS/pkg/db"
+	"github.com/glebsnigirev/final-GS/pkg/server"
 )
 
 func main() {
