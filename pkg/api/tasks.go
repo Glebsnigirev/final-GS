@@ -1,104 +1,89 @@
 package api
 
-import (
-	"encoding/json"
-	"fmt"
-	"log"
-	"net/http"
-	"time"
+// import (
+// 	"encoding/json"
+// 	"fmt"
+// 	"net/http"
+// 	"time"
 
-	"github.com/glebsnigirev/final-GS/pkg/db"
-)
+// 	"github.com/glebsnigirev/final-GS/pkg/db"
+// )
 
-// taskHandler обрабатывает GET, POST и PUT запросы для задач
-func taskHandler(w http.ResponseWriter, r *http.Request) {
+// func taskHandler(w http.ResponseWriter, r *http.Request) {
+// 	switch r.Method {
+// 	case http.MethodPost:
+// 		addTaskHandler(w, r)
+// 	default:
+// 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+// 	}
+// }
 
-	switch r.Method {
-	case http.MethodGet:
-		// Получаем задачу по ID
-		id := r.URL.Query().Get("id")
-		if id == "" {
-			writeErrorResponse(w, fmt.Errorf("Не указан идентификатор"))
-			return
-		}
+// func addTaskHandler(w http.ResponseWriter, r *http.Request) {
+// 	var task db.Task
 
-		task, err := db.GetTask(id)
-		if err != nil {
-			writeErrorResponse(w, fmt.Errorf("Ошибка: %v", err))
-			return
-		}
+// 	// Десериализуем JSON из тела запроса
+// 	decoder := json.NewDecoder(r.Body)
+// 	err := decoder.Decode(&task)
+// 	if err != nil {
+// 		writeJson(w, map[string]string{"error": "Ошибка десериализации JSON"})
+// 		return
+// 	}
 
-		// Для GET-запроса возвращаем объект типа *db.Task
-		writeJson(w, task)
+// 	// Проверяем обязательное поле title
+// 	if task.Title == "" {
+// 		writeJson(w, map[string]string{"error": "Не указан заголовок задачи"})
+// 		return
+// 	}
 
-	case http.MethodPost:
-		// Обрабатываем создание новой задачи
-		var task db.Task
-		err := json.NewDecoder(r.Body).Decode(&task)
-		if err != nil {
-			writeErrorResponse(w, fmt.Errorf("Ошибка при декодировании данных: %v", err))
-			return
-		}
+// 	// Получаем текущую дату
+// 	now := time.Now()
 
-		id, err := db.AddTask(&task)
-		if err != nil {
-			writeErrorResponse(w, fmt.Errorf("Ошибка при добавлении задачи: %v", err))
-			return
-		}
+// 	// Проверяем и подставляем текущую дату, если поле date пустое
+// 	if task.Date == "" {
+// 		task.Date = now.Format("20060102")
+// 	}
 
-		// Для POST-запроса возвращаем id добавленной задачи в виде map
-		writeJson(w, map[string]interface{}{"id": id})
+// 	// Проверка формата даты
+// 	t, err := time.Parse("20060102", task.Date)
+// 	if err != nil {
+// 		writeJson(w, map[string]string{"error": "Дата представлена в формате, отличном от 20060102"})
+// 		return
+// 	}
 
-	case http.MethodPut:
-		// Обновляем задачу
-		id := r.URL.Query().Get("id")
-		if id == "" {
-			writeErrorResponse(w, fmt.Errorf("Не указан идентификатор"))
-			return
-		}
+// 	// Если задача в прошлом, корректируем её дату
+// 	var next string
+// 	if afterNow(now, t) {
+// 		// Если указано правило повторения, вычисляем следующую дату
+// 		if task.Repeat != "" {
+// 			next, err = NextDate(now, task.Date, task.Repeat)
+// 			if err != nil {
+// 				writeJson(w, map[string]string{"error": "Неверный формат повторения"})
+// 				return
+// 			}
+// 			task.Date = next
+// 		} else {
+// 			// Если правило повторения не указано, подставляем сегодняшнюю дату
+// 			task.Date = now.Format("20060102")
+// 		}
+// 	}
 
-		var task db.Task
-		err := json.NewDecoder(r.Body).Decode(&task)
-		if err != nil {
-			writeErrorResponse(w, fmt.Errorf("Ошибка при декодировании данных: %v", err))
-			return
-		}
+// 	// Добавляем задачу в базу данных
+// 	id, err := db.AddTask(&task)
+// 	if err != nil {
+// 		writeJson(w, map[string]string{"error": fmt.Sprintf("Ошибка при добавлении задачи: %v", err)})
+// 		return
+// 	}
 
-		// Устанавливаем ID, которое мы получили из запроса
-		task.ID = id
+// 	// Возвращаем JSON с ID добавленной задачи
+// 	writeJson(w, map[string]string{"id": fmt.Sprintf("%d", id)})
+// }
 
-		// Логируем полученные данные для отладки
-		log.Printf("Обновляем задачу с ID %s: %+v", id, task)
-
-		// Проверяем, что дата не меньше текущей
-		if task.Date < time.Now().Format("20060102") {
-			writeErrorResponse(w, fmt.Errorf("Дата не может быть меньше сегодняшней"))
-			return
-		}
-
-		// Обновляем задачу в базе данных
-		err = db.UpdateTask(&task)
-		if err != nil {
-			writeErrorResponse(w, fmt.Errorf("Ошибка при обновлении задачи: %v", err))
-			return
-		}
-
-		// Для PUT-запроса возвращаем пустой JSON
-		writeJson(w, map[string]interface{}{})
-	}
-}
-
-// writeJson пишет JSON в ответ
-func writeJson(w http.ResponseWriter, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		http.Error(w, "Ошибка при кодировании JSON", http.StatusInternalServerError)
-	}
-}
-
-// // writeErrorResponse пишет ошибку в формате JSON
-// func writeErrorResponse(w http.ResponseWriter, err error) {
-// 	w.Header().Set("Content-Type", "application/json")
-// 	w.WriteHeader(http.StatusBadRequest)
-// 	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+// // Вспомогательная функция для записи JSON в ответ
+// func writeJson(w http.ResponseWriter, data interface{}) {
+// 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+// 	encoder := json.NewEncoder(w)
+// 	err := encoder.Encode(data)
+// 	if err != nil {
+// 		http.Error(w, "Ошибка записи JSON", http.StatusInternalServerError)
+// 	}
 // }

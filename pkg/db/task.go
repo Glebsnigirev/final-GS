@@ -22,17 +22,19 @@ func validateRepeat(repeat string) error {
 		return nil
 	}
 
-	// Проверка формата повторений
+	// Проверка формата повторений: префикс и число
 	if len(repeat) < 3 {
 		return fmt.Errorf("Невозможное повторение: %v", repeat)
 	}
 
 	switch repeat[:2] {
 	case "d ", "w ", "m ", "y ":
-		// Пытаемся распарсить число после префикса
+		if len(repeat) < 3 {
+			return fmt.Errorf("Невозможное повторение: %v", repeat)
+		}
 		_, err := strconv.Atoi(repeat[2:])
 		if err != nil {
-			return fmt.Errorf("Неверный формат повторения: %v", err)
+			return fmt.Errorf("Неверный формат повторения: %v", repeat)
 		}
 		return nil
 	default:
@@ -40,48 +42,24 @@ func validateRepeat(repeat string) error {
 	}
 }
 
-func isValidDate(date string) (bool, error) {
-	// Пробуем распарсить строку в дату с использованием формата "20060102"
-	parsedDate, err := time.Parse("20060102", date)
-	if err != nil {
-		// Логируем ошибку и возвращаем ошибку с подробностями
-		return false, fmt.Errorf("неправильный формат даты: %v", err)
-	}
-
-	// Получаем текущую дату без времени (00:00:00)
-	currentDate := time.Now().Truncate(24 * time.Hour)
-
-	// Логируем текущую дату и дату задачи для отладки
-	log.Printf("Проверка даты: задача - %v, текущая - %v", parsedDate.Format("20060102"), currentDate.Format("20060102"))
-
-	// Проверяем, что дата не меньше текущей
-	if parsedDate.Before(currentDate) {
-		// Логируем ошибку с датами и возвращаем ошибку
-		return false, fmt.Errorf("Дата %v не может быть меньше сегодняшней (%v)", date, currentDate.Format("20060102"))
-	}
-
-	// Если дата валидна, возвращаем true
-	return true, nil
-}
-
 // AddTask добавляет новую задачу в базу данных
 func AddTask(task *Task) (string, error) {
-	// Проверка на пустое значение для даты
+	// Устанавливаем текущую дату, если не указана
 	if task.Date == "" {
-		task.Date = time.Now().Format("20060102") // Устанавливаем текущую дату, если она пустая
+		task.Date = time.Now().Format("20060102")
 	}
 
-	// Проверка даты
-	valid, err := isValidDate(task.Date)
-	if !valid {
-		log.Printf("Ошибка при проверке даты: %v", err) // Логируем ошибку
-		return "", err
+	// Проверка даты на корректность
+	_, err := time.Parse("20060102", task.Date)
+	if err != nil {
+		log.Printf("Неверный формат даты: %v", err)
+		return "", fmt.Errorf("Неверный формат даты: %v", task.Date)
 	}
 
 	// Проверка повторений
 	err = validateRepeat(task.Repeat)
 	if err != nil {
-		log.Printf("Ошибка при проверке повторения: %v", err) // Логируем ошибку
+		log.Printf("Ошибка при проверке повторения: %v", err)
 		return "", err
 	}
 
@@ -89,19 +67,28 @@ func AddTask(task *Task) (string, error) {
 	query := `INSERT INTO scheduler (date, title, comment, repeat) VALUES (?, ?, ?, ?)`
 	result, err := db.Exec(query, task.Date, task.Title, task.Comment, task.Repeat)
 	if err != nil {
-		log.Printf("Ошибка при добавлении задачи в БД: %v", err) // Логируем ошибку
+		log.Printf("Ошибка при добавлении задачи в БД: %v", err)
 		return "", err
 	}
 
-	// Получаем ID добавленной задачи
 	id, err := result.LastInsertId()
 	if err != nil {
-		log.Printf("Ошибка при получении ID задачи: %v", err) // Логируем ошибку
-		return "", err
+		// Логируем ошибку, если не можем получить ID
+		log.Printf("Ошибка при получении ID задачи: %v", err)
+
+		// Попробуем проверить другой способ получения ID (например, RowsAffected)
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			log.Printf("Ошибка при получении количества затронутых строк: %v", err)
+			return "", err
+		}
+		if rowsAffected == 0 {
+			return "", fmt.Errorf("Не удалось вставить задачу в базу данных")
+		}
+		return "", fmt.Errorf("Не удалось получить ID задачи: %v", err)
 	}
 
-	// Возвращаем ID задачи в виде строки
-	log.Printf("Задача добавлена с ID: %d", id) // Логируем успешное добавление
+	log.Printf("Задача добавлена с ID: %d", id)
 	return fmt.Sprintf("%d", id), nil
 }
 

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/glebsnigirev/final-GS/pkg/db" // Импорт db
 )
 
 // Init регистрирует маршруты для API
@@ -41,7 +43,8 @@ func nextDayHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Вычисляем следующую дату
-	nextDate, err := NextDate(now, dateParam, repeatParam)
+	// Передаем now как time.Time объект, а не строку
+	nextDate, err := db.NextDate(now, dateParam, repeatParam) // Передаем time.Time
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
