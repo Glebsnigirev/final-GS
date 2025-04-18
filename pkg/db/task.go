@@ -1,6 +1,11 @@
 package db
 
-import "time"
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+)
 
 // Структура задачи
 type Task struct {
@@ -11,12 +16,8 @@ type Task struct {
 	Repeat  string `json:"repeat"`
 }
 
-// Функция для добавления задачи
 func AddTask(task *Task) (int64, error) {
-	query := `
-        INSERT INTO scheduler (date, title, comment, repeat)
-        VALUES (?, ?, ?, ?)
-    `
+	query := `INSERT INTO scheduler (date, title, comment, repeat) VALUES (?, ?, ?, ?)`
 	res, err := DB.Exec(query, task.Date, task.Title, task.Comment, task.Repeat)
 	if err != nil {
 		return 0, err
@@ -29,14 +30,11 @@ func Tasks(limit int, search string) ([]*Task, error) {
 	args := []interface{}{}
 	where := ""
 
-	// Обработка параметра поиска
 	if search != "" {
 		if t, err := time.Parse("02.01.2006", search); err == nil {
-			// Поиск по дате
 			where = " WHERE date = ?"
 			args = append(args, t.Format("20060102"))
 		} else {
-			// Поиск по подстроке в заголовке или комментарии
 			where = " WHERE title LIKE ? OR comment LIKE ?"
 			s := "%" + search + "%"
 			args = append(args, s, s)
@@ -63,4 +61,33 @@ func Tasks(limit int, search string) ([]*Task, error) {
 	}
 
 	return tasks, nil
+}
+
+func GetTask(id string) (*Task, error) {
+	row := DB.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
+	var t Task
+	err := row.Scan(&t.ID, &t.Date, &t.Title, &t.Comment, &t.Repeat)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("Задача не найдена")
+		}
+		return nil, err
+	}
+	return &t, nil
+}
+
+func UpdateTask(task *Task) error {
+	query := `UPDATE scheduler SET date = ?, title = ?, comment = ?, repeat = ? WHERE id = ?`
+	res, err := DB.Exec(query, task.Date, task.Title, task.Comment, task.Repeat, task.ID)
+	if err != nil {
+		return err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return fmt.Errorf("Задача не найдена")
+	}
+	return nil
 }
