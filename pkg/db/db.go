@@ -2,47 +2,50 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
+	"log"
 	"os"
 
 	_ "modernc.org/sqlite"
 )
 
+var DB *sql.DB
+
 const schema = `
-CREATE TABLE scheduler (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date CHAR(8) NOT NULL DEFAULT "",
-    title VARCHAR(255) NOT NULL,
-    comment TEXT,
-    repeat VARCHAR(128) NOT NULL
+CREATE TABLE IF NOT EXISTS scheduler (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	date CHAR(8) NOT NULL DEFAULT "",
+	title VARCHAR(128) NOT NULL DEFAULT "",
+	comment TEXT NOT NULL DEFAULT "",
+	repeat VARCHAR(128) NOT NULL DEFAULT ""
 );
-CREATE INDEX idx_date ON scheduler(date);
+
+CREATE INDEX IF NOT EXISTS idx_scheduler_date ON scheduler(date);
 `
 
-var db *sql.DB
-
-func GetDB() *sql.DB {
-	return db
-}
-
+// Инициализация базы данных
 func Init(dbFile string) error {
+	log.Println("Инициализация базы данных:", dbFile)
+
+	// Проверяем существование файла базы данных
 	_, err := os.Stat(dbFile)
+	install := os.IsNotExist(err)
 
-	var install bool
+	// Открытие подключения к базе данных
+	DB, err = sql.Open("sqlite", dbFile)
 	if err != nil {
-		install = true
+		return fmt.Errorf("ошибка открытия БД: %w", err)
 	}
 
-	db, err = sql.Open("sqlite", dbFile)
-	if err != nil {
-		return err
-	}
-
+	// Если база данных не существует, создаём схему
 	if install {
-		_, err = db.Exec(schema)
+		_, err = DB.Exec(schema)
 		if err != nil {
-			return err
+			return fmt.Errorf("ошибка создания схемы: %w", err)
 		}
+		log.Println("Схема базы данных успешно создана")
 	}
 
+	log.Println("База данных успешно инициализирована")
 	return nil
 }
