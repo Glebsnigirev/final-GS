@@ -5,10 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/glebsnigirev/final-GS/pkg/db"
 )
+
+// Функция для проверки повторений
+func validateRepeat(repeat string) error {
+	// Поддерживаем только следующие значения повторений
+	if repeat != "" && repeat != "y" && repeat != "m" && repeat != "d" && !isValidRepeatFormat(repeat) {
+		return fmt.Errorf("Неверное правило повторения: %v", repeat)
+	}
+	return nil
+}
+
+// Проверка формата повторений вида "d <число>"
+func isValidRepeatFormat(repeat string) bool {
+	re := regexp.MustCompile(`^d\s*\d+$`)
+	return re.MatchString(repeat)
+}
 
 func addTaskHandler(w http.ResponseWriter, r *http.Request) {
 	var task db.Task
@@ -38,6 +54,11 @@ func addTaskHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func checkDate(task *db.Task, now time.Time) error {
+	// Проверка повторений
+	if err := validateRepeat(task.Repeat); err != nil {
+		return err
+	}
+
 	// Если дата указана как "today", устанавливаем текущую дату
 	if task.Date == "today" {
 		task.Date = now.Format("20060102")
