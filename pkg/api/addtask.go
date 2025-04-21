@@ -78,14 +78,18 @@ func checkDate(task *db.Task, now time.Time) error {
 	// Если дата в прошлом, обновляем ее на текущую или на следующую по правилу повторения
 	if t.Before(now) {
 		if task.Repeat == "" {
-			task.Date = now.Format("20060102") // Сегодняшняя дата
+			task.Date = now.Format("20060102")
 		} else {
-			// Если есть правило повторения, вычисляем следующую дату
-			next, err := NextDate(now, task.Date, task.Repeat)
-			if err != nil {
-				return fmt.Errorf("Неверное правило повторения: %v", err)
+			// если t == now, можно оставить дату как есть
+			if !t.Before(now.Truncate(24 * time.Hour)) {
+				task.Date = t.Format("20060102")
+			} else {
+				next, err := NextDate(now, task.Date, task.Repeat)
+				if err != nil {
+					return fmt.Errorf("Неверное правило повторения: %v", err)
+				}
+				task.Date = next
 			}
-			task.Date = next
 		}
 	}
 

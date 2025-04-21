@@ -3,73 +3,196 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
 const dateLayout = "20060102"
 
-// Функция для проверки високосного года
 func isLeapYear(year int) bool {
 	return (year%4 == 0 && year%100 != 0) || (year%400 == 0)
 }
 
-// Функция для вычисления следующей даты на основе правила повторения
+func afterNow(date, now time.Time) bool {
+	return date.After(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()))
+}
+
 func NextDate(now time.Time, dstart string, repeat string) (string, error) {
-	// Проверка корректности повторения
-	if err := validateRepeat(repeat); err != nil {
-		return "", err
+	if dstart == "" {
+		return "", fmt.Errorf("empty start date")
+	}
+	if repeat == "" {
+		return "", fmt.Errorf("empty repeat rule")
 	}
 
-	// Преобразование строки даты в тип time.Time
-	startDate, err := time.Parse("20060102", dstart)
+	startDate, err := time.Parse(dateLayout, dstart)
 	if err != nil {
 		return "", fmt.Errorf("invalid date format")
 	}
 
-	// Если дата уже прошла, добавляем годы или месяцы
-	if startDate.Before(now) {
-		if repeat == "y" {
-			// Добавляем год, пока дата не станет после текущей
-			for startDate.Before(now) {
-				startDate = startDate.AddDate(1, 0, 0)
-			}
-		} else if repeat == "m" {
-			// Добавляем месяц, пока дата не станет после текущей
-			for startDate.Before(now) {
-				startDate = startDate.AddDate(0, 1, 0)
-			}
-		}
+	parts := strings.Split(repeat, " ")
+	if len(parts) < 1 {
+		return "", fmt.Errorf("invalid repeat format")
 	}
 
-	// Если правило повторения по дням (например, "d 10")
-	re := regexp.MustCompile(`^d\s*(\d+)$`)
-	match := re.FindStringSubmatch(repeat)
-	if len(match) > 0 {
-		daysToAdd, err := strconv.Atoi(match[1])
-		if err != nil {
+	switch parts[0] {
+	case "y":
+		if len(parts) != 1 {
+			return "", fmt.Errorf("invalid yearly repeat format")
+		}
+		day := startDate.Day()
+		month := startDate.Month()
+
+		for {
+			startDate = startDate.AddDate(1, 0, 0)
+			// если 29 февраля — проверим, високосный ли год
+			if month == time.February && day == 29 {
+				// Если год невисокосный, корректируем дату на 1 марта
+				if !isLeapYear(startDate.Year()) {
+					startDate = time.Date(startDate.Year(), time.March, 1, 0, 0, 0, 0, startDate.Location())
+				} else {
+					startDate = time.Date(startDate.Year(), time.February, 29, 0, 0, 0, 0, startDate.Location())
+				}
+			} else {
+				startDate = time.Date(startDate.Year(), month, day, 0, 0, 0, 0, startDate.Location())
+			}
+
+			if afterNow(startDate, now) {
+				break
+			}
+		}
+		return startDate.Format(dateLayout), nil
+
+	case "d":
+		if len(parts) != 2 {
+			return "", fmt.Errorf("invalid daily repeat format")
+		}
+		days, err := strconv.Atoi(parts[1])
+		if err != nil || days <= 0 {
 			return "", fmt.Errorf("invalid day count")
 		}
-
-		// Добавляем дни и проверяем, чтобы дата не прошла
-		startDate = startDate.AddDate(0, 0, daysToAdd)
-
-		// Проверяем, что дата не прошла
-		for startDate.Before(now) {
-			startDate = startDate.AddDate(0, 0, daysToAdd)
+		// Если days слишком велико (например, больше 365), это может быть ошибкой
+		if days > 365 {
+			return "", fmt.Errorf("too large day count for repeat")
 		}
+		for {
+			startDate = startDate.AddDate(0, 0, days)
+			if afterNow(startDate, now) {
+				break
+			}
+		}
+		return startDate.Format(dateLayout), nil
 
-		return startDate.Format("20060102"), nil
+	case "m":
+		if len(parts) == 2 {
+			days := strings.Split(parts[1], ",")
+			return nextMonthlyByDay(startDate, now, days)
+		} else if len(parts) == 3 {
+			days := strings.Split(parts[1], ",")
+			months := strings.Split(parts[2], ",")
+			return nextMonthlyByDayAndMonth(startDate, now, days, months)
+		}
+		return "", fmt.Errorf("invalid monthly repeat format")
+
+	case "w":
+		if len(parts) != 2 {
+			return "", fmt.Errorf("invalid weekly repeat format")
+		}
+		days := strings.Split(parts[1], ",")
+		return nextWeekly(startDate, now, days)
+
+	default:
+		return "", fmt.Errorf("unknown repeat prefix")
 	}
+}
 
-	// Проверка на високосный год
-	if startDate.Month() == time.February && startDate.Day() == 29 && !isLeapYear(startDate.Year()) {
-		startDate = time.Date(startDate.Year(), time.March, 1, 0, 0, 0, 0, startDate.Location()) // Переносим на 1 марта
+func nextMonthlyByDay(startDate, now time.Time, days []string) (string, error) {
+	var resDate time.Time
+	for _, d := range days {
+		day, err := strconv.Atoi(d)
+		if err != nil || day < -2 || day == 0 || day > 31 {
+			return "", fmt.Errorf("invalid day in repeat")
+		}
+		date := startDate
+		for {
+			if day > 0 {
+				maxDay := time.Date(date.Year(), date.Month()+1, 0, 0, 0, 0, 0, date.Location()).Day()
+				if day > maxDay {
+					date = date.AddDate(0, 1, 0)
+					continue
+				}
+				date = time.Date(date.Year(), date.Month(), day, 0, 0, 0, 0, date.Location())
+			} else {
+				date = time.Date(date.Year(), date.Month()+1, 0, 0, 0, 0, 0, date.Location())
+				date = date.AddDate(0, 0, day+1)
+			}
+			if afterNow(date, now) {
+				break
+			}
+			date = date.AddDate(0, 1, 0)
+		}
+		if resDate.IsZero() || date.Before(resDate) {
+			resDate = date
+		}
 	}
+	return resDate.Format(dateLayout), nil
+}
 
-	// Возвращаем дату в формате YYYYMMDD
-	return startDate.Format("20060102"), nil
+func nextMonthlyByDayAndMonth(startDate, now time.Time, days, months []string) (string, error) {
+	var resDate time.Time
+	for _, d := range days {
+		day, err := strconv.Atoi(d)
+		if err != nil || day < -2 || day == 0 || day > 31 {
+			return "", fmt.Errorf("invalid day in repeat")
+		}
+		for _, m := range months {
+			month, err := strconv.Atoi(m)
+			if err != nil || month < 1 || month > 12 {
+				return "", fmt.Errorf("invalid month in repeat")
+			}
+			date := startDate
+			for {
+				if day > 0 {
+					date = time.Date(date.Year(), time.Month(month), day, 0, 0, 0, 0, date.Location())
+				} else {
+					date = time.Date(date.Year(), time.Month(month)+1, 0, 0, 0, 0, 0, date.Location())
+					date = date.AddDate(0, 0, day+1)
+				}
+				if afterNow(date, now) {
+					break
+				}
+				date = date.AddDate(1, 0, 0)
+			}
+			if resDate.IsZero() || date.Before(resDate) {
+				resDate = date
+			}
+		}
+	}
+	return resDate.Format(dateLayout), nil
+}
+
+func nextWeekly(startDate, now time.Time, days []string) (string, error) {
+	var resDate time.Time
+	for _, d := range days {
+		day, err := strconv.Atoi(d)
+		if err != nil || day < 1 || day > 7 {
+			return "", fmt.Errorf("invalid weekday in repeat")
+		}
+		date := startDate
+		offset := (7 + day - int(date.Weekday())) % 7
+		if offset == 0 {
+			offset = 7
+		}
+		date = date.AddDate(0, 0, offset)
+		for !afterNow(date, now) {
+			date = date.AddDate(0, 0, 7)
+		}
+		if resDate.IsZero() || date.Before(resDate) {
+			resDate = date
+		}
+	}
+	return resDate.Format(dateLayout), nil
 }
 
 func nextDayHandler(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +203,6 @@ func nextDayHandler(w http.ResponseWriter, r *http.Request) {
 	var now time.Time
 	var err error
 
-	// Обработка даты "now"
 	if nowStr == "" {
 		now = time.Now()
 	} else {
@@ -91,13 +213,11 @@ func nextDayHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Вычисление следующей даты
 	next, err := NextDate(now, dateStr, repeatStr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Отправка ответа
 	fmt.Fprint(w, next)
 }
