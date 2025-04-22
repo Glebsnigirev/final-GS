@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_scheduler_date ON scheduler(date);
 func Init(dbFile string) error {
 	log.Println("Инициализация базы данных:", dbFile)
 
-	// Проверяем существование файла базы данных
+	// Проверяем  файла базы данных
 	_, err := os.Stat(dbFile)
 	install := os.IsNotExist(err)
 

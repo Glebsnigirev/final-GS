@@ -48,7 +48,7 @@ func NextDate(now time.Time, dstart string, repeat string) (string, error) {
 			startDate = startDate.AddDate(1, 0, 0)
 			// если 29 февраля — проверим, високосный ли год
 			if month == time.February && day == 29 {
-				// Если год невисокосный, корректируем дату на 1 марта
+				// Если год невисокосный, корректируем дату на 1 марта.
 				if !isLeapYear(startDate.Year()) {
 					startDate = time.Date(startDate.Year(), time.March, 1, 0, 0, 0, 0, startDate.Location())
 				} else {
